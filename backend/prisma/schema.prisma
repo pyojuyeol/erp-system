@@ -1,0 +1,173 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+  EMPLOYEE
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         Role     @default(EMPLOYEE)
+  employee     Employee?
+  refreshTokens RefreshToken[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("users")
+}
+
+model Department {
+  id        String     @id @default(uuid())
+  name      String     @unique
+  employees Employee[]
+  createdAt DateTime   @default(now())
+
+  @@map("departments")
+}
+
+model Employee {
+  id           String     @id @default(uuid())
+  user         User       @relation(fields: [userId], references: [id])
+  userId       String     @unique
+  department   Department @relation(fields: [departmentId], references: [id])
+  departmentId String
+  position     String
+  hireDate     DateTime
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  salaries     Salary[]
+  attendances  Attendance[]
+  leaves       Leave[]
+
+  @@map("employees")
+}
+
+model Salary {
+  id         String   @id @default(uuid())
+  employee   Employee @relation(fields: [employeeId], references: [id])
+  employeeId String
+  payMonth   String
+  baseSalary Int
+  allowance  Int      @default(0)
+  deduction  Int      @default(0)
+  netPay     Int
+  memo       String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([employeeId, payMonth])
+  @@map("salaries")
+}
+
+enum TransactionType {
+  IN
+  OUT
+}
+
+model Item {
+  id           String                 @id @default(uuid())
+  sku          String                 @unique
+  name         String
+  unit         String
+  quantity     Int                    @default(0)
+  price        Int                    @default(0)
+  transactions InventoryTransaction[]
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+
+  @@map("items")
+}
+
+model InventoryTransaction {
+  id        String           @id @default(uuid())
+  item      Item             @relation(fields: [itemId], references: [id])
+  itemId    String
+  type      TransactionType
+  quantity  Int
+  memo      String?
+  createdAt DateTime         @default(now())
+
+  @@map("inventory_transactions")
+}
+
+enum EntryType {
+  INCOME
+  EXPENSE
+}
+
+model AccountingEntry {
+  id        String    @id @default(uuid())
+  type      EntryType
+  category  String
+  amount    Int
+  entryDate DateTime
+  memo      String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@map("accounting_entries")
+}
+
+enum LeaveType {
+  ANNUAL
+  HALF_DAY
+  SICK
+  OTHER
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model Attendance {
+  id         String    @id @default(uuid())
+  employee   Employee  @relation(fields: [employeeId], references: [id])
+  employeeId String
+  workDate   DateTime
+  checkIn    DateTime?
+  checkOut   DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@unique([employeeId, workDate])
+  @@map("attendances")
+}
+
+model Leave {
+  id         String      @id @default(uuid())
+  employee   Employee    @relation(fields: [employeeId], references: [id])
+  employeeId String
+  type       LeaveType
+  startDate  DateTime
+  endDate    DateTime
+  reason     String?
+  status     LeaveStatus @default(PENDING)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  @@map("leaves")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  revoked   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@map("refresh_tokens")
+}
