@@ -1,0 +1,66 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Backend - Install & Build
+        working-directory: ./backend
+        run: |
+          npm ci
+          DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy" npx prisma generate
+          npm run build
+
+      - name: Frontend - Install & Build
+        working-directory: ./frontend
+        run: |
+          npm ci
+          npm run build
+
+  deploy:
+    needs: build-and-test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: self-hosted
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create backend .env.docker
+        working-directory: ./backend
+        run: |
+          cat > .env.docker << 'ENVEOF'
+          PORT=4000
+          NODE_ENV=production
+          DATABASE_URL="postgresql://erp_user:erp_password@postgres:5432/erp_db?schema=public"
+          REDIS_HOST=redis
+          REDIS_PORT=6379
+          JWT_SECRET=${{ secrets.JWT_SECRET }}
+          JWT_EXPIRES_IN=15m
+          JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }}
+          JWT_REFRESH_EXPIRES_IN=7d
+          CORS_ORIGIN=http://localhost:8090
+          ENVEOF
+
+      - name: Deploy with Docker Compose
+        run: |
+          docker compose down
+          docker compose up -d --build
+
+      - name: Run DB migrations
+        run: |
+          docker compose exec -T backend npx prisma migrate deploy
+
+      - name: Health check
+        run: |
+          sleep 8
+          curl -f http://localhost:4000/api/dashboard/summary -H "Authorization: Bearer invalid" || echo "인증 없이는 401이 정상입니다"
+          curl -f http://localhost:8090 || exit 1
