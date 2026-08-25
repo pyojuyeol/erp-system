@@ -11,6 +11,7 @@ import { AccountingModule } from './modules/accounting/accounting.module';
 import { AttendanceModule } from './modules/attendance/attendance.module';
 import { LeavesModule } from './modules/leaves/leaves.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
+import { HealthModule } from './modules/health/health.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
     AttendanceModule,
     LeavesModule,
     DashboardModule,
+    HealthModule,
   ],
 })
 export class AppModule {}

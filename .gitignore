@@ -12,3 +12,9 @@ coverage/
 
 # Prisma
 backend/prisma/migrations/**/migration.sql.bak
+
+# Docker
+.env.docker
+
+# GitHub Actions self-hosted runner (로컬 설치 파일, 저장소에 포함하지 않음)
+actions-runner/
