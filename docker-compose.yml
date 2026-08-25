@@ -1,5 +1,4 @@
 name: erp-system
-
 services:
   postgres:
     image: postgres:16-alpine
@@ -18,7 +17,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-
   redis:
     image: redis:7-alpine
     container_name: erp-redis
@@ -30,7 +28,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-
   backend:
     image: erp-backend:latest
     build:
@@ -53,7 +50,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
-
   frontend:
     image: erp-frontend:latest
     build:
@@ -68,11 +64,10 @@ services:
     ports:
       - "8090:80"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:80"]
+      test: ["CMD", "nginx", "-t"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 10s
-
 volumes:
   postgres_data:
