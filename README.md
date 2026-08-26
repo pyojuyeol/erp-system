@@ -1,6 +1,6 @@
 # ERP System
 
-React + NestJS 기반 사내 ERP(전사적 자원관리) 시스템입니다. 인사, 부서, 급여, 재고, 회계, 근태 관리를 하나의 웹 애플리케이션에서 통합적으로 처리합니다.
+React + NestJS 기반 사내 ERP(전사적 자원관리) 시스템입니다. 인사, 부서, 급여, 재고, 회계, 근태 관리를 하나의 웹 애플리케이션에서 통합적으로 처리하며, Docker Compose 기반 컨테이너 오케스트레이션과 GitHub Actions CI/CD 파이프라인까지 갖춘 프로덕션 수준의 배포 환경을 구성했습니다.
 
 ## 목차
 
@@ -8,9 +8,11 @@ React + NestJS 기반 사내 ERP(전사적 자원관리) 시스템입니다. 인
 - [주요 기능](#주요-기능)
 - [시스템 아키텍처](#시스템-아키텍처)
 - [폴더 구조](#폴더-구조)
-- [시작하기](#시작하기)
+- [시작하기 (로컬 개발)](#시작하기-로컬-개발)
+- [Docker Compose로 실행](#docker-compose로-실행)
+- [CI/CD 파이프라인](#cicd-파이프라인)
+- [부하 테스트](#부하-테스트)
 - [API 문서](#api-문서)
-- [배포](#배포)
 
 ## 기술 스택
 
@@ -41,8 +43,11 @@ React + NestJS 기반 사내 ERP(전사적 자원관리) 시스템입니다. 인
 - Swagger (OpenAPI) — `/api/docs`
 
 ### 인프라 / 배포
-- Nginx (정적 파일 서빙 + API 리버스 프록시)
-- PM2 (systemd 연동 자동 기동)
+- Docker & Docker Compose (PostgreSQL, Redis, Backend, Frontend 컨테이너 오케스트레이션)
+- Nginx (정적 파일 서빙 + API 리버스 프록시, 컨테이너 및 호스트 양쪽 구성 지원)
+- GitHub Actions (Self-hosted Runner 기반 CI/CD, 빌드 검증 → 배포 → 마이그레이션 → 헬스체크 → 실패 시 자동 롤백)
+- k6 (부하 테스트)
+- PM2 (Docker 미사용 시 대체 배포 방식, systemd 연동 자동 기동)
 
 ## 주요 기능
 
@@ -54,16 +59,23 @@ React + NestJS 기반 사내 ERP(전사적 자원관리) 시스템입니다. 인
 | **재고관리** | 품목 마스터 관리, 입출고 트랜잭션, 재고 수량 자동 증감, 재고 부족 검증 |
 | **회계관리** | 수입/지출 전표 등록, 월별 수입·지출·수지잔액 집계 |
 | **근태관리** | 출근/퇴근 체크(1일 1회), 휴가 신청 및 관리자 승인/반려 워크플로우 |
-| **대시보드** | 전 도메인 실시간 통계 요약 (직원 수, 이번 달 손익, 재고 부족 품목, 대기 휴가 등) |
+| **대시보드** | 전 도메인 실시간 통계 요약, 8개 집계 쿼리를 `Promise.all()`로 병렬 처리 |
 
 ## 시스템 아키텍처
 
-브라우저 요청은 Nginx가 단일 진입점(포트 80)에서 받습니다.
+```
+브라우저
+   │
+   ▼
+ Nginx (:80 또는 :8090)
+   ├── /            → React 정적 빌드 파일 서빙
+   └── /api/*        → NestJS 백엔드로 리버스 프록시
+                            │
+                            ▼
+                      PostgreSQL / Redis
+```
 
-- `/` 경로: React 정적 빌드 파일을 직접 서빙
-- `/api/*` 경로: NestJS 백엔드(포트 4000)로 리버스 프록시
-
-백엔드는 PostgreSQL과 Redis에 연결됩니다. 프론트엔드와 백엔드가 Nginx를 통해 동일 오리진으로 노출되어, 별도의 CORS 예외 처리 없이 쿠키 기반 인증이 안전하게 동작합니다.
+프론트엔드와 백엔드가 Nginx를 통해 동일 오리진으로 노출되어, 별도의 CORS 예외 처리 없이 쿠키 기반 인증이 안전하게 동작합니다. Docker Compose 환경에서는 각 서비스가 컨테이너 네트워크의 서비스명(`postgres`, `redis`, `backend`)으로 서로를 참조합니다.
 
 ### 인증 흐름
 
@@ -75,21 +87,26 @@ React + NestJS 기반 사내 ERP(전사적 자원관리) 시스템입니다. 인
 
 ## 폴더 구조
 
-- `frontend/` — React + Vite 앱
+- `frontend/` — React + Vite 앱, `Dockerfile`, `nginx.conf` 포함
   - `src/api/` — axios 클라이언트 (인증 인터셉터 포함)
   - `src/app/` — React Query 클라이언트 설정
   - `src/components/layout/` — 공통 레이아웃, 라우트 가드
-  - `src/features/` — 도메인별 모듈 (auth, employees, departments, salaries, inventory, accounting, attendance, dashboard)
+  - `src/features/` — 도메인별 모듈
   - `src/store/` — zustand 스토어 (인증 상태)
-- `backend/` — NestJS 앱
+- `backend/` — NestJS 앱, `Dockerfile` 포함
   - `prisma/schema.prisma` — DB 스키마
   - `prisma/seed.ts` — 더미데이터 시드 스크립트
   - `src/common/` — guards, decorators, filters
-  - `src/modules/` — 도메인별 모듈 (auth, employees, departments, salaries, items, inventory, accounting, attendance, leaves, dashboard)
-- `ecosystem.config.js` — PM2 배포 설정
+  - `src/modules/` — 도메인별 모듈 (auth, employees, departments, salaries, items, inventory, accounting, attendance, leaves, dashboard, health)
+- `loadtest/` — k6 부하 테스트 스크립트 (`healthcheck.js`, `scenario.js`)
+- `.github/workflows/deploy.yml` — CI/CD 파이프라인 정의
+- `docker-compose.yml` — 전체 서비스 오케스트레이션 정의
+- `ecosystem.config.js` — PM2 배포 설정 (Docker 미사용 대체 경로)
+- `LOAD_TEST_REPORT.md` — k6 부하 테스트 결과 리포트
+- `PROJECT_DEEP_DIVE.md` — 설계 이유 및 트러블슈팅 상세 정리
 - `README.md`
 
-## 시작하기
+## 시작하기 (로컬 개발)
 
 ### 사전 요구사항
 
@@ -131,6 +148,58 @@ React + NestJS 기반 사내 ERP(전사적 자원관리) 시스템입니다. 인
 
 `http://localhost:5173` 에서 접속 가능합니다.
 
+## Docker Compose로 실행
+
+Docker와 Docker Compose가 설치되어 있다면, PostgreSQL과 Redis를 별도로 설치하지 않고 전체 스택을 한 번에 띄울 수 있습니다.
+
+    # 백엔드 환경변수 파일 준비 (컨테이너 서비스명으로 DB/Redis 연결)
+    cd backend
+    cp .env.example .env.docker
+    # .env.docker의 DATABASE_URL 호스트를 postgres, REDIS_HOST를 redis로 수정
+
+    # 루트에서 전체 서비스 빌드 및 실행
+    cd ..
+    docker compose up -d --build
+
+    # 마이그레이션 및 시딩
+    docker compose exec backend npx prisma migrate deploy
+    DATABASE_URL="postgresql://erp_user:erp_password@localhost:5432/erp_db?schema=public" npx tsx backend/prisma/seed.ts
+
+접속: `http://localhost:8090`
+
+### 서비스 구성
+
+| 서비스 | 이미지 | 포트 |
+|---|---|---|
+| postgres | postgres:16-alpine | 5432 |
+| redis | redis:7-alpine | 6379 |
+| backend | 자체 빌드 (NestJS) | 4000 |
+| frontend | 자체 빌드 (Nginx + React 정적 파일) | 8090 → 80 |
+
+모든 서비스에 헬스체크가 구성되어 있어 `docker compose ps`로 상태를 확인할 수 있습니다.
+
+## CI/CD 파이프라인
+
+`.github/workflows/deploy.yml`에 정의된 GitHub Actions 워크플로우가 `main` 브랜치 push마다 자동 실행됩니다. **Self-hosted Runner**를 배포 대상 서버에 직접 설치하여, 외부에 포트를 열지 않고도(아웃바운드 연결만으로) 배포를 자동화했습니다.
+
+파이프라인 단계:
+1. **build-and-test** — 백엔드/프론트엔드 각각 의존성 설치 및 빌드 검증
+2. **deploy** (main 브랜치 push 시에만 실행)
+   - 롤백을 위해 현재 이미지를 `:previous` 태그로 백업
+   - 새 이미지 빌드 및 배포 (`docker compose up -d`)
+   - Prisma 마이그레이션 적용
+   - `/api/health` 및 프론트엔드 응답을 최대 10회 재시도하며 헬스체크
+   - **헬스체크 실패 시 자동으로 `:previous` 이미지로 롤백**
+
+## 부하 테스트
+
+k6를 사용해 최대 30명 동시 사용자 시나리오(로그인 → 대시보드 조회 → 직원 목록 조회)로 부하 테스트를 진행했습니다. 상세 결과는 [`LOAD_TEST_REPORT.md`](./LOAD_TEST_REPORT.md)를 참고하세요.
+
+    cd loadtest
+    k6 run scenario.js
+
+**요약**: 30명 동시 사용자 기준 p95 응답시간 53.18ms, 요청 실패율 0%로 모든 임계값을 통과했습니다.
+
 ## API 문서
 
 백엔드 실행 후 아래 주소에서 Swagger UI로 전체 API 스펙을 확인할 수 있습니다.
@@ -139,23 +208,6 @@ React + NestJS 기반 사내 ERP(전사적 자원관리) 시스템입니다. 인
 
 `/api/auth/login`으로 로그인 후 발급받은 Access Token을 우측 상단 **Authorize** 버튼에 입력하면, 인증이 필요한 API도 바로 테스트할 수 있습니다.
 
-## 배포
+## 라이선스
 
-Docker 없이 Nginx + PM2 조합으로 배포합니다.
-
-    # 프론트엔드 빌드
-    cd frontend
-    npm run build
-
-    # 백엔드 빌드
-    cd ../backend
-    npm run build
-
-    # PM2로 백엔드 실행
-    cd ..
-    pm2 start ecosystem.config.js --env production
-    pm2 save
-    pm2 startup
-
-Nginx는 `/`를 `frontend/dist`로, `/api/`를 백엔드(`localhost:4000`)로 리버스 프록시하도록 설정합니다.
-
+개인 학습 및 포트폴리오 목적으로 제작되었습니다.
