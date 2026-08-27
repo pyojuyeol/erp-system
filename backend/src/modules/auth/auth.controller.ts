@@ -13,10 +13,11 @@ export class AuthController {
   constructor(private authService: AuthService) {}
 
   private setRefreshCookie(res: Response, token: string) {
+    const isCrossDomain = process.env.COOKIE_SAME_SITE === 'none';
     res.cookie(REFRESH_COOKIE_NAME, token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      secure: process.env.COOKIE_SECURE === 'true' || isCrossDomain,
+      sameSite: (process.env.COOKIE_SAME_SITE as 'lax' | 'none') || 'lax',
       maxAge: REFRESH_COOKIE_MAX_AGE,
       path: '/api/auth',
     });
